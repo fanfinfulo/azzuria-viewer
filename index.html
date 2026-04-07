@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="robots" content="noindex, nofollow"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Azzuria — Azzuria Viewer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; background: #1a1510; color: #e8dcc8; font-family: Georgia, serif; }
+    #root { background: #1a1510; background-image: radial-gradient(ellipse at 20% 20%, #2a1f0e 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, #0e1a20 0%, transparent 60%); min-height: 100vh; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+    ::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.25); border-radius: 3px; }
+    input, select, button { font-family: Georgia, serif; }
+    .tab-btn { transition: background 0.15s, color 0.15s; }
+    .card { transition: border-color 0.15s; }
+    @media (max-width: 640px) {
+      body { padding-bottom: 56px; }
+      .desktop-tabbar { display: none !important; }
+      .mobile-tabbar  { display: flex !important; }
+      .info-bar { flex-wrap: wrap; gap: 5px; }
+    }
+    @media (min-width: 641px) {
+      .mobile-tabbar { display: none !important; }
+    }
+    .mobile-tabbar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+      background: rgba(26,21,16,0.98); backdrop-filter: blur(12px);
+      border-top: 1px solid rgba(255,255,255,0.1);
+      height: 52px; padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+  const { useState, useEffect, useCallback } = React;
+
+  // ── Config ────────────────────────────────────────────────────────────────
+  const JSONBIN_KEY = "$2a$10$JzT4w/gCwWhd449vO7e5Puq0tCDGk2L2n3j1IPva/n9De6JUG155K";
+  const JSONBIN_BIN = "69ac98d3d0ea881f40fa3593";
+  const POLL_MS     = 30000;
+
+  // ── Constants ─────────────────────────────────────────────────────────────
+  const SEASONS  = ["Spring","Summer","Autumn","Winter"];
+  const CLASSES  = ["Nobles","Bureaucrats","Merchants","Industrialists","Church","Intellectuals","Rural Workers","Factory Workers"];
+  const REGIONS  = ["Valdorenza","Montecastre","Colleverdi","Rocchevalle","Pietramonforte","Sestria","Castelfalco","Varazzino","Mombarcaro","Torremezzo","Fontaniglia","Rivoltasso","Verre","Cassinasco"];
+  const CAPITALS = ["Villasora","Mezzana","Pontarola","Lochiaro","Barlento","Ceranza","Scafona","Finento","Larpoulle","Vantoux","Fontaniglia","Rivoltasso","Verre","Cassinasco"];
+  const REGION_DESC = [
+    "The royal capital and administrative heart. Dominated by the court bureaucracy, clerks, lawyers, and ambitious minor nobility.",
+    "A great port city where merchant wealth flows freely — the commercial engine of Azzuria, cosmopolitan and deeply suspicious of state interference.",
+    "Fertile hill country of old noble estates. Conservative, devout, and fiercely protective of ancestral privilege.",
+    "A rugged mountain region. The Church and rural clan networks hold more sway than any distant capital.",
+    "Broad agricultural plains. Its tenant farmers supply the kingdom's grain — and its deepest reserves of rural discontent.",
+    "A compact coastal region of fishing, light manufacturing, and coastal trade. Its port workers are among the most organised.",
+    "Rolling lowlands given over to rice cultivation. Prosperous, but its prosperity flows upward.",
+    "A sheltered coastal strip backed by steep hills. Traditionalist villages where the local church exerts enormous authority.",
+    "A narrow alpine valley. Sparse population, harsh winters, and a fierce local identity that resists outside administration.",
+    "The great river plain of the interior. Highly agricultural but growing — new mills are drawing factory workers into its towns.",
+    "A cultured coastal city with a strong literary and intellectual tradition. Azzuria's most cosmopolitan province.",
+    "A highland region with a strong Catholic identity and conservative landowning class. Deeply loyal to the Crown.",
+    "A compact industrial district built around the textile trade. Factory workers concentrated, increasingly organised, chronically underpaid.",
+    "A remote and deeply traditional region — the kingdom's poorest and most devout. Change comes slowly, if at all.",
+  ];
+  const CLASS_COLORS = ["#c9a84c","#7a9cc4","#6db87a","#c47a5a","#9b7fba","#c4a96b","#8fae7a","#a08060"];
+  const ANTAGONISTS  = {0:5, 5:0, 1:2, 2:1, 3:7, 7:3, 4:6, 6:4};
+  const REGION_SEATS = [25,24,12,19,24,11,20,10,9,16,10,12,7,5];
+  const TOTAL_SEATS  = 204;
+  const MAJORITY     = 103;
+  const SENATE_TOTAL = 28;
+  const SENATE_MAJ   = 15;
+  const MINISTRIES   = [
+    {id:"pm",title:"Prime Minister"},{id:"interior",title:"Interior"},
+    {id:"trade",title:"Trade"},{id:"war",title:"War"},
+    {id:"works",title:"Public Works"},{id:"foreign",title:"Foreign Affairs"},
+    {id:"church",title:"Religion"},{id:"justice",title:"Justice"},
+    {id:"education",title:"Education"},
+  ];
+  const DIPLO_LABELS = ["Hostile","Cold","Wary","Neutral","Warm","Friendly","Allied"];
+  const DIPLO_COLORS = ["#c46060","#c47a5a","#a09060","#6a7a5a","#6a8a5a","#4a9a6a","#4a90c0"];
+  const INITIAL_DATA = [
+    [ 4, 1, 7, 5, 3, 2, 4, 6, 4, 4, 2, 6, 3, 2],
+    [ 9, 3, 3, 4, 2, 4, 2, 2, 3, 2, 3, 5, 3, 1],
+    [ 3,10, 2, 3, 2, 8, 2, 2, 1, 2, 7, 2, 2, 1],
+    [ 7, 4, 1, 1, 2, 2, 1, 1, 1, 2, 3, 1, 3, 1],
+    [ 1, 2, 7, 5, 4, 3, 5, 8, 6, 5, 2, 8, 4,10],
+    [ 3, 7, 1, 2, 1, 2, 1, 1, 1, 1, 5, 2, 1, 1],
+    [ 1, 1, 7, 6, 9, 4, 8, 7, 9, 8, 3, 4, 4,10],
+    [ 2, 2, 2, 4, 7, 5, 7, 3, 5, 6, 5, 2,10, 4],
+  ];
+
+  // ── Palette ───────────────────────────────────────────────────────────────
+  const G   = "#c9a84c"; // gold
+  const S   = "#a09070"; // soft
+  const D   = "#7a6a4a"; // dim
+  const BG  = "#1a1510";
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const getSeason    = t => SEASONS[(t-1)%4];
+  const getYear      = t => 1848 + Math.floor((t-1)/4);
+  const colSum       = (data, col) => data.reduce((s,r) => s + r[col], 0);
+  const infPct       = (data, row, col) => Math.round(data[row][col] / Math.max(1, colSum(data,col)) * 100);
+  const litLevel     = (data, col) => {
+    const score = (data[5][col]*3 + data[1][col] - data[4][col]*0.5 + 5) / 15;
+    if (score < 0.6)  return {label:"Very Low", color:"#c4605a",n:1};
+    if (score < 0.9)  return {label:"Low",       color:"#c47a5a",n:2};
+    if (score < 1.2)  return {label:"Average",   color:"#c9a84c",n:3};
+    if (score < 1.5)  return {label:"High",      color:"#8fae7a",n:4};
+    return                   {label:"Very High", color:"#6db87a",n:5};
+  };
+  const calcNatUnrest = ag => Math.min(10, ag.reduce((a,v)=>a+(v>=5?2:v>=3?1:0),0));
+  const unrestInfo = u => {
+    if (u<=1) return {label:"Calm",    color:"#6db87a"};
+    if (u<=3) return {label:"Tense",   color:"#c9a84c"};
+    if (u<=6) return {label:"Volatile",color:"#c47a5a"};
+    return           {label:"Crisis",  color:"#c4605a"};
+  };
+  const agitPhase = s => {
+    if (s<=2) return {label:"Content", color:"#6db87a"};
+    if (s<=4) return {label:"Restless",color:"#c9a84c"};
+    return           {label:"Agitated",color:"#c4605a"};
+  };
+  const popColor = v => v>6?"#6db87a":v>2?"#8fae7a":v>-2?"#c4a96b":v>-6?"#c47a5a":"#c4605a";
+  const POP_SCALE = 50;
+  const popPct = v => v<=0 ? 0 : Math.min(100, Math.round(v/POP_SCALE*100));
+
+  const calcPopularity = (cand, data, agitation, natUnrest) =>
+    REGIONS.map((_,rIdx) => {
+      let score = 0;
+      const lit  = litLevel(data,rIdx).n;
+      const base = cand.classBase||[];
+      (cand.laws||[]).forEach(law => (law.effects||[]).forEach(({classIdx,type}) => {
+        const inf  = data[classIdx][rIdx];
+        const agit = agitation[classIdx] >= 5;
+        const mult = base.includes(classIdx) ? 2 : 1;
+        // Direct effect
+        if (type==="bonus") score += inf * mult;
+        if (type==="malus") score -= (agit ? inf : Math.floor(inf/2)) * mult;
+        // Antagonist ripple
+        const ant = ANTAGONISTS[classIdx];
+        if (ant !== undefined) {
+          const antInf  = data[ant][rIdx];
+          const antMult = base.includes(ant) ? 2 : 1;
+          if (type==="bonus") score -= Math.floor(antInf/2) * antMult;
+          if (type==="malus") score += Math.floor(antInf/2) * antMult;
+        }
+      }));
+      (cand.actions||[]).forEach(a => { score += (a.bonuses[rIdx]||0) * lit; });
+      const regionBase = cand.regionBase||[];
+      if (regionBase.includes(rIdx)) score += 3;
+      if (natUnrest >= 4) score -= 2;
+      return Math.round(score);
+    });
+
+  // simulate seat projection from current popularity
+  const projectSeats = (candidates, data, agitation, natUnrest) => {
+    const totals = {};
+    candidates.forEach(c => { totals[c.id] = 0; });
+    REGIONS.forEach((_,rIdx) => {
+      const scored = candidates.map(c => ({c, score: calcPopularity(c,data,agitation,natUnrest)[rIdx]}))
+        .sort((a,b) => b.score - a.score);
+      const winner = scored[0]?.c;
+      if (winner) totals[winner.id] = (totals[winner.id]||0) + REGION_SEATS[rIdx];
+    });
+    return totals;
+  };
+
+  const calcNationEco = (n) => {
+    const pop  = (n.regions||[]).reduce((s,r) => s+(r.pop||1), 0) || (n.pop||0);
+    const prod = n.productivity || n.prod || 2;
+    const mi   = n.milInvest||0, unr=n.unrest||0;
+    const eco  = Math.max(0, pop*prod - mi*0.5 - unr*1.5);
+    const mil  = eco/2 + mi;
+    const avail= Math.max(0, mil - Math.floor(unr/2));
+    return {pop, eco:Math.round(eco*10)/10, mil:Math.round(mil*10)/10, avail:Math.round(avail*10)/10};
+  };
+
+  // ── Micro components ──────────────────────────────────────────────────────
+
+  function Bar({pct, color, height=4, bg="rgba(255,255,255,0.06)"}) {
+    return (
+      <div style={{width:"100%",height,background:bg,borderRadius:2,overflow:"hidden"}}>
+        <div style={{width:Math.min(100,Math.max(0,pct))+"%",height:"100%",background:color,borderRadius:2,transition:"width 0.3s"}}/>
+      </div>
+    );
+  }
+
+  function Pill({label, color, bg}) {
+    return (
+      <span style={{fontSize:"8px",letterSpacing:"1px",textTransform:"uppercase",color,
+        border:`1px solid ${color}44`,borderRadius:"3px",padding:"2px 7px",
+        background:bg||color+"15",whiteSpace:"nowrap",fontFamily:"Georgia,serif"}}>
+        {label}
+      </span>
+    );
+  }
+
+  function SectionHead({children, accent=G}) {
+    return (
+      <div style={{fontSize:"9px",letterSpacing:"4px",color:accent,textTransform:"uppercase",
+        marginBottom:"12px",paddingBottom:"7px",
+        borderBottom:`1px solid ${accent}30`,
+        display:"flex",alignItems:"center",gap:"8px"}}>
+        <div style={{flex:1,height:"1px",background:`linear-gradient(to right,${accent}30,transparent)`}}/>
+        {children}
+        <div style={{flex:1,height:"1px",background:`linear-gradient(to left,${accent}30,transparent)`}}/>
+      </div>
+    );
+  }
+
+  function Card({children, accent, style={}}) {
+    return (
+      <div style={{background:"rgba(255,255,255,0.02)",
+        border:"1px solid rgba(255,255,255,0.07)",
+        borderTop:accent?`3px solid ${accent}`:"1px solid rgba(255,255,255,0.07)",
+        borderRadius:"5px",padding:"14px 16px",...style}}>
+        {children}
+      </div>
+    );
+  }
+
+  function ParliamentGrid({seatTotals, candidates, total=TOTAL_SEATS, majority=MAJORITY}) {
+    const sorted = [...(candidates||[])].sort((a,b)=>(seatTotals[b.id]||0)-(seatTotals[a.id]||0));
+  const rowSeats=[28,34,41,48,53], rowR=[85,105,125,145,165];
+  const W=360, H=200, cx=W/2, cy=H-16;
+
+  const positions=[];
+  for(let row=0;row<5;row++){
+    const n=rowSeats[row], r=rowR[row];
+    for(let i=0;i<n;i++){
+      const angle=Math.PI*(i/(n-1));
+      positions.push({angle, row, x: cx-r*Math.cos(angle), y: cy-r*Math.sin(angle)});
+    }
+  }
+  positions.sort((a,b)=> Math.abs(a.angle-b.angle)<0.001 ? a.row-b.row : a.angle-b.angle);
+
+  const colors=[];
+  sorted.forEach(c=>{ for(let i=0;i<(seatTotals[c.id]||0);i++) colors.push(c.color); });
+  while(colors.length<total) colors.push("rgba(255,255,255,0.12)");
+  const dots=positions.map((p,i)=>({...p,color:colors[i]}));
+
+    return (
+      <div style={{background:"rgba(0,0,0,0.35)",borderRadius:"8px",padding:"10px 4px 2px",overflow:"hidden"}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}}>
+        {rowR.map((r,ri)=>(
+          <path key={ri} d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`}
+            fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="0.8"/>
+        ))}
+        <line x1={cx} y1={cy-72} x2={cx} y2={cy-151}
+          stroke="rgba(201,168,76,0.6)" strokeWidth="1.5" strokeDasharray="3,3"/>
+        <text x={cx+3} y={cy-142} fill="rgba(201,168,76,0.8)" fontSize="7" fontFamily="Georgia,serif">MAJ</text>
+        {dots.map((d,i)=>(
+          <circle key={i} cx={d.x} cy={d.y} r="4.2"
+            fill={d.color} opacity={d.color==="rgba(255,255,255,0.12)"?.2:.9}/>
+        ))}
+      </svg>
+      </div>
+    );
+  }
+
+  // ── HOME TAB ──────────────────────────────────────────────────────────────
+  function HomeTab({state, candidates, data, agitation, natUnrest, turn}) {
+    const ur      = unrestInfo(natUnrest);
+    const govt    = state.government||{};
+    const pm      = govt.pm ? candidates.find(c=>c.id===govt.pm) : null;
+    const senHold = candidates.find(c=>c.id===state.senateHolder);
+    const electionHistory = state.electionHistory||[];
+    const latestChamber = electionHistory.find(e=>e.type==="chamber");
+    const latestSenate  = electionHistory.find(e=>e.type==="senate");
+    const totalPops = candidates.map(c=>({c,total:calcPopularity(c,data,agitation,natUnrest).reduce((a,b)=>a+b,0)})).sort((a,b)=>b.total-a.total);
+    const wars  = state.wars||[];
+    const deals = state.deals||[];
+    const nations = state.nations||[];
+
+    return (
+      <div style={{padding:"20px 16px",maxWidth:"860px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"14px"}}>
+
+        {/* Title strip */}
+        <div style={{textAlign:"center",padding:"20px",borderBottom:`1px solid ${G}22`}}>
+          <div style={{fontSize:"8px",letterSpacing:"5px",color:D,textTransform:"uppercase",marginBottom:"4px"}}>Azzuria Viewer</div>
+          <div style={{fontSize:"26px",letterSpacing:"3px",color:"#e8dcc8",lineHeight:1.1,marginBottom:"4px"}}>Kingdom of Azzuria</div>
+          <div style={{fontSize:"11px",letterSpacing:"4px"}}>
+            <span style={{color:G}}>{getSeason(turn)}</span>
+            <span style={{color:"#e8dcc8",marginLeft:"6px"}}>{getYear(turn)}</span>
+            <span style={{color:D,marginLeft:"6px"}}>· Turn {turn}</span>
+          </div>
+        </div>
+
+        {/* Top row: Unrest + Government */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+          {/* National Unrest */}
+          <Card>
+            <SectionHead>National Unrest</SectionHead>
+            <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"8px"}}>
+              <span style={{fontSize:"32px",fontWeight:"bold",color:ur.color,fontFamily:"Georgia,serif"}}>{natUnrest}</span>
+              <span style={{fontSize:"11px",color:D}}>/10</span>
+              <Pill label={ur.label} color={ur.color}/>
+            </div>
+            <Bar pct={natUnrest*10} color={ur.color} height={6}/>
+            <div style={{marginTop:"10px",display:"flex",flexDirection:"column",gap:"4px"}}>
+              {CLASSES.map((cls,i)=>{
+                const ph=agitPhase(agitation[i]);
+                return agitation[i]>0?(
+                  <div key={cls} style={{display:"flex",alignItems:"center",gap:"7px"}}>
+                    <div style={{width:6,height:6,borderRadius:"2px",background:CLASS_COLORS[i],flexShrink:0}}/>
+                    <span style={{fontSize:"9px",color:S,flex:1}}>{cls}</span>
+                    <div style={{display:"flex",gap:"2px"}}>
+                      {Array.from({length:6},(_,j)=>(
+                        <div key={j} style={{width:6,height:6,borderRadius:"1px",
+                          background:j<agitation[i]?ph.color:"rgba(255,255,255,0.06)"}}/>
+                      ))}
+                    </div>
+                    <Pill label={ph.label} color={ph.color}/>
+                  </div>
+                ):null;
+              }).filter(Boolean)}
+              {agitation.every(a=>a===0)&&<div style={{fontSize:"9px",color:D,fontStyle:"italic"}}>All classes content</div>}
+            </div>
+          </Card>
+
+          {/* Government */}
+          <Card>
+            <SectionHead>Government</SectionHead>
+            {pm ? (
+              <div style={{marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                <div style={{fontSize:"8px",color:D,letterSpacing:"2px",marginBottom:"3px"}}>PRIME MINISTER</div>
+                <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:pm.color,flexShrink:0}}/>
+                  <span style={{fontSize:"16px",color:pm.color,letterSpacing:"1px"}}>{pm.name}</span>
+                </div>
+              </div>
+            ) : <div style={{fontSize:"10px",color:D,fontStyle:"italic",marginBottom:"10px"}}>No PM appointed</div>}
+            {senHold && (
+              <div style={{marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                <div style={{fontSize:"8px",color:"#9b7fba",letterSpacing:"2px",marginBottom:"3px"}}>SENATE MAJORITY</div>
+                <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                  <div style={{width:8,height:8,borderRadius:"2px",background:senHold.color,flexShrink:0}}/>
+                  <span style={{fontSize:"13px",color:senHold.color}}>{senHold.name}</span>
+                </div>
+              </div>
+            )}
+            {/* Cabinet grid */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px",marginBottom:"10px"}}>
+              {MINISTRIES.filter(m=>m.id!=="pm").map(m=>{
+                const holder = govt[m.id] ? candidates.find(c=>c.id===govt[m.id]) : null;
+                return (
+                  <div key={m.id} style={{fontSize:"9px",display:"flex",alignItems:"center",gap:"5px",padding:"3px 0"}}>
+                    <div style={{width:5,height:5,borderRadius:"1px",background:holder?holder.color:"rgba(255,255,255,0.1)",flexShrink:0}}/>
+                    <span style={{color:D,minWidth:"60px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.title}</span>
+                    <span style={{color:holder?holder.color:D,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{holder?holder.name:"—"}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Economic indicators */}
+            {(govt.azzuriaMilInvest||govt.tariffs)&&(
+              <div style={{display:"flex",gap:"8px",paddingTop:"8px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                {govt.azzuriaMilInvest>0&&(
+                  <div style={{textAlign:"center",flex:1,padding:"5px",background:"rgba(0,0,0,0.2)",borderRadius:"3px"}}>
+                    <div style={{fontSize:"7px",color:D,letterSpacing:"1px",marginBottom:"2px"}}>MILITARY</div>
+                    <div style={{fontSize:"14px",color:"#c47a5a"}}>{govt.azzuriaMilInvest}</div>
+                  </div>
+                )}
+                {govt.tariffs>0&&(
+                  <div style={{textAlign:"center",flex:1,padding:"5px",background:"rgba(0,0,0,0.2)",borderRadius:"3px"}}>
+                    <div style={{fontSize:"7px",color:D,letterSpacing:"1px",marginBottom:"2px"}}>TARIFFS</div>
+                    <div style={{fontSize:"14px",color:"#c9a84c"}}>{govt.tariffs}</div>
+                  </div>
+                )}
+                {(govt.pendingInvestments||[]).length>0&&(
+                  <div style={{flex:2,padding:"5px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"3px"}}>
+                    <div style={{fontSize:"7px",color:"#6db87a",letterSpacing:"1px",marginBottom:"3px"}}>INVESTMENTS QUEUED</div>
+                    {(govt.pendingInvestments||[]).map(inv=>(
+                      <div key={inv.id} style={{fontSize:"9px",color:S}}>{inv.label}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Current Parliament — from last saved chamber election */}
+        <Card>
+          {latestChamber ? (() => {
+            const el = latestChamber;
+            const sortedR = [...(el.ranked||[])].sort((a,b)=>(el.seatTotals[b.id]||0)-(el.seatTotals[a.id]||0));
+            const w = el.winner;
+            const wSeats = el.seatTotals[w.id]||0;
+            return (
+              <>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}}>
+                  <SectionHead accent={w.color}>Chamber of Deputies · {el.season} {el.year}</SectionHead>
+                  {el.hasMajority&&<Pill label="Majority" color="#6db87a"/>}
+                </div>
+                {/* Winner callout */}
+                <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 14px",
+                  marginBottom:"12px",borderRadius:"4px",
+                  background:"rgba(255,255,255,0.02)",border:`1px solid ${w.color}33`}}>
+                  <span style={{width:"10px",height:"10px",borderRadius:"50%",background:w.color,display:"inline-block",flexShrink:0}}/>
+                  <span style={{fontSize:"14px",color:w.color,flex:1}}>{w.name}</span>
+                  <span style={{fontSize:"24px",fontWeight:"bold",color:"#e8dcc8"}}>{wSeats}</span>
+                  <span style={{fontSize:"10px",color:D}}>/ {el.totalSeats}</span>
+                </div>
+                {/* Parliament grid */}
+                <div style={{marginBottom:"14px"}}>
+                  <ParliamentGrid seatTotals={el.seatTotals} candidates={el.ranked} total={el.totalSeats}/>
+                </div>
+                {/* Per-party breakdown with delta vs previous */}
+                {(() => {
+                  const prev = electionHistory.filter(h=>h.type==="chamber")[1];
+                  return (
+                    <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
+                      {sortedR.map(r=>{
+                        const seats = el.seatTotals[r.id]||0;
+                        const pct   = Math.round(seats/el.totalSeats*100);
+                        const prevS = prev ? (prev.seatTotals[r.id]||0) : null;
+                        const delta = prevS!==null ? seats-prevS : null;
+                        return (
+                          <div key={r.id}>
+                            <div style={{display:"flex",alignItems:"center",gap:"7px",marginBottom:"3px"}}>
+                              <div style={{width:7,height:7,borderRadius:"50%",background:r.color,flexShrink:0}}/>
+                              <span style={{fontSize:"10px",color:r.color,flex:1}}>{r.name}</span>
+                              <span style={{fontSize:"13px",fontWeight:"bold",color:"#e8dcc8"}}>{seats}</span>
+                              <span style={{fontSize:"9px",color:D,minWidth:"28px",textAlign:"right"}}>{pct}%</span>
+                              {delta!==null&&<span style={{fontSize:"9px",minWidth:"24px",textAlign:"right",
+                                color:delta>0?"#6db87a":delta<0?"#c4605a":D,fontWeight:"bold"}}>
+                                {delta>0?"+":""}{delta===0?"—":delta}
+                              </span>}
+                            </div>
+                            <div style={{height:"3px",background:"rgba(255,255,255,0.06)",borderRadius:"2px",overflow:"hidden"}}>
+                              <div style={{width:pct+"%",height:"100%",background:r.color,borderRadius:"2px"}}/>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {prev&&<div style={{fontSize:"8px",color:D,textAlign:"right",marginTop:"2px",letterSpacing:"1px"}}>± vs {prev.season} {prev.year}</div>}
+                    </div>
+                  );
+                })()}
+              </>
+            );
+          })() : (
+            <>
+              <SectionHead>Chamber of Deputies</SectionHead>
+              <div style={{textAlign:"center",padding:"24px 0",color:D,fontSize:"10px",fontStyle:"italic"}}>
+                No election held yet
+              </div>
+            </>
+          )}
+        </Card>
+
+        {/* Party popularity */}
+        <Card>
+          <SectionHead>Party Popularity Index</SectionHead>
+          <div style={{display:"flex",flexDirection:"column",gap:"9px"}}>
+            {totalPops.map(({c,total},i)=>{
+              const pops = calcPopularity(c,data,agitation,natUnrest);
+              const avg  = Math.round(total/REGIONS.length);
+              const best  = Math.max(...pops), worst = Math.min(...pops);
+              const bestR = REGIONS[pops.indexOf(best)], worstR = REGIONS[pops.indexOf(worst)];
+              return (
+                <div key={c.id} style={{padding:"12px 14px",background:"rgba(255,255,255,0.02)",
+                  border:`1px solid ${i===0?"rgba(201,168,76,0.25)":c.color+"22"}`,
+                  borderLeft:`3px solid ${i===0?G:c.color}`,borderRadius:"4px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"7px"}}>
+                    {i===0&&<span style={{fontSize:"11px"}}>👑</span>}
+                    <div style={{width:9,height:9,borderRadius:"50%",background:c.color,flexShrink:0}}/>
+                    <span style={{fontSize:"13px",color:c.color,flex:1}}>{c.name}</span>
+                    <span style={{fontSize:"11px",color:total>=0?c.color:"#c4605a",fontWeight:"bold"}}>{total>0?"+":""}{total}</span>
+                    <span style={{fontSize:"9px",color:D}}>avg {avg>0?"+":""}{avg}</span>
+                  </div>
+                  <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"5px"}}>
+                    <Bar pct={popPct(avg)} color={avg>0?c.color:"rgba(255,255,255,0.08)"} height={5}/>
+                  </div>
+                  <div style={{display:"flex",gap:"10px",fontSize:"9px",color:D}}>
+                    <span style={{color:"#6db87a"}}>▲ {bestR} <strong>{best>0?"+":""}{best}</strong></span>
+                    <span style={{color:"#c4605a"}}>▼ {worstR} <strong>{worst>0?"+":""}{worst}</strong></span>
+                    {(c.laws||[]).length>0&&<span style={{color:G}}>{c.laws.length} law{c.laws.length!==1?"s":""}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        {/* Latest election results */}
+        {(latestChamber||latestSenate) && (
+          <Card>
+            <SectionHead>Last Election Results</SectionHead>
+            <div style={{display:"grid",gridTemplateColumns:latestChamber&&latestSenate?"1fr 1fr":"1fr",gap:"10px"}}>
+              {[latestChamber,latestSenate].filter(Boolean).map(el=>(
+                <div key={el.id} style={{padding:"10px",background:"rgba(0,0,0,0.2)",borderRadius:"4px"}}>
+                  <div style={{fontSize:"8px",color:D,letterSpacing:"2px",marginBottom:"6px"}}>
+                    {el.type==="chamber"?"CHAMBER":"SENATE"} · {el.season} {el.year}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"8px"}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:el.winner.color}}/>
+                    <span style={{fontSize:"12px",color:el.winner.color}}>{el.winner.name}</span>
+                    <span style={{fontSize:"16px",fontWeight:"bold",color:"#e8dcc8",marginLeft:"auto"}}>{el.seatTotals[el.winner.id]}</span>
+                    <span style={{fontSize:"9px",color:D}}>/{el.totalSeats}</span>
+                    {el.hasMajority&&<Pill label="Majority" color="#6db87a"/>}
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+                    {el.ranked.map(r=>{
+                      const s = el.seatTotals[r.id]||0;
+                      return s>0?(
+                        <div key={r.id} style={{display:"flex",alignItems:"center",gap:"5px"}}>
+                          <span style={{fontSize:"9px",color:r.color,width:"100px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
+                          <div style={{flex:1}}><Bar pct={Math.round(s/el.totalSeats*100)} color={r.color} height={4}/></div>
+                          <span style={{fontSize:"9px",color:r.color,minWidth:"22px",textAlign:"right"}}>{s}</span>
+                        </div>
+                      ):null;
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Wars & Deals */}
+        {(wars.length>0||deals.length>0) && (
+          <Card>
+            <SectionHead>International Situation</SectionHead>
+            {wars.length>0&&(
+              <div style={{marginBottom:deals.length>0?"12px":"0"}}>
+                <div style={{fontSize:"8px",color:"#c4605a",letterSpacing:"2px",marginBottom:"6px"}}>⚔ ACTIVE CONFLICTS</div>
+                {wars.map(w=>{
+                  const attName = w.attId==="azzuria"?"Azzuria":nations.find(n=>n.id===w.attId)?.name||w.attId;
+                  const defName = w.defId==="azzuria"?"Azzuria":nations.find(n=>n.id===w.defId)?.name||w.defId;
+                  const sc = w.score||0;
+                  return (
+                    <div key={w.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"6px 10px",
+                      background:"rgba(196,96,90,0.05)",border:"1px solid rgba(196,96,90,0.2)",borderLeft:"3px solid #c4605a",borderRadius:"3px",marginBottom:"4px",flexWrap:"wrap"}}>
+                      <span style={{fontSize:"11px",color:"#e8dcc8"}}>{attName}</span>
+                      <span style={{fontSize:"9px",color:"#c4605a"}}>⚔</span>
+                      <span style={{fontSize:"11px",color:"#e8dcc8"}}>{defName}</span>
+                      <span style={{fontSize:"9px",color:sc>0?"#6db87a":sc<0?"#c4605a":D,marginLeft:"auto"}}>Score {sc>0?"+":""}{sc} · Turn {w.turns||0}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {deals.length>0&&(
+              <div>
+                <div style={{fontSize:"8px",color:"#6db87a",letterSpacing:"2px",marginBottom:"6px"}}>🤝 TRADE AGREEMENTS</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+                  {deals.map(d=>{
+                    const aName = d.aId==="azzuria"?"Azzuria":nations.find(n=>n.id===d.aId)?.name||d.aId;
+                    const bName = d.bId==="azzuria"?"Azzuria":nations.find(n=>n.id===d.bId)?.name||d.bId;
+                    return (
+                      <span key={d.id} style={{fontSize:"9px",padding:"3px 9px",borderRadius:"3px",
+                        background:"rgba(74,154,106,0.05)",border:"1px solid rgba(74,154,106,0.2)",color:"#a09070"}}>
+                        {aName} ↔ {bName} <span style={{color:"#6db87a"}}>{d.turnsLeft}t</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  // ── REGIONS TAB ───────────────────────────────────────────────────────────
+  function RegionModal({rIdx, candidates, data, agitation, natUnrest, regionDescs, onClose}) {
+    const pops   = candidates.map(c=>({c,score:calcPopularity(c,data,agitation,natUnrest)[rIdx]})).sort((a,b)=>b.score-a.score);
+    const lit    = litLevel(data,rIdx);
+    const cSum   = colSum(data,rIdx);
+    const leader = pops[0];
+    return (
+      <div onClick={onClose} style={{position:"fixed",top:0,left:0,right:0,bottom:0,
+        background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:"16px"}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:"#1a160f",border:"1px solid rgba(201,168,76,0.25)",
+          borderTop:leader?`3px solid ${leader.c.color}`:"3px solid rgba(201,168,76,0.3)",
+          borderRadius:"8px",padding:"22px",width:"100%",maxWidth:"480px",maxHeight:"90vh",overflowY:"auto"}}>
+
+          {/* Region header */}
+          <div style={{marginBottom:"16px"}}>
+            <div style={{fontSize:"8px",letterSpacing:"4px",color:D,textTransform:"uppercase",marginBottom:"4px"}}>Region</div>
+            <div style={{fontSize:"22px",color:"#e8dcc8",letterSpacing:"2px",marginBottom:"4px"}}>{REGIONS[rIdx]}</div>
+            <div style={{fontSize:"9px",color:G,letterSpacing:"2px",marginBottom:"6px"}}>✦ {CAPITALS[rIdx]}</div>
+            {(() => { const d = (regionDescs&&regionDescs[rIdx])||REGION_DESC[rIdx]; return d ? <div style={{fontSize:"10px",color:S,fontStyle:"italic",lineHeight:"1.65",marginBottom:"8px"}}>{d}</div> : null; })()}
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:"9px",color:D}}>🗳 {REGION_SEATS[rIdx]} seats</span>
+              <Pill label={`Lit: ${lit.label}`} color={lit.color}/>
+            </div>
+          </div>
+
+          {/* Party popularity */}
+          <div style={{marginBottom:"16px"}}>
+            <SectionHead>Party Popularity</SectionHead>
+            {pops.map(({c,score},i)=>{
+              return (
+                <div key={c.id} style={{marginBottom:"8px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
+                    {i===0&&<span>👑</span>}
+                    <div style={{width:7,height:7,borderRadius:"50%",background:c.color}}/>
+                    <span style={{fontSize:"11px",color:c.color,flex:1}}>{c.name}</span>
+                    <span style={{fontSize:"11px",color:score>=0?c.color:"#c4605a",fontWeight:"bold"}}>{score>0?"+":""}{score}</span>
+                  </div>
+                  <Bar pct={popPct(score)} color={score>0?c.color:"rgba(255,255,255,0.08)"} height={5}/>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Class influence as percentages */}
+          <div style={{marginBottom:"14px"}}>
+            <SectionHead>Class Influence (% of region)</SectionHead>
+            {CLASSES.map((cls,i)=>{
+              const pct = infPct(data,i,rIdx);
+              return (
+                <div key={cls} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px"}}>
+                  <div style={{width:6,height:6,borderRadius:"2px",background:CLASS_COLORS[i],flexShrink:0}}/>
+                  <span style={{fontSize:"9px",color:S,width:"110px",flexShrink:0}}>{cls}</span>
+                  <div style={{flex:1}}><Bar pct={pct} color={CLASS_COLORS[i]} height={5}/></div>
+                  <span style={{fontSize:"9px",color:CLASS_COLORS[i],minWidth:"30px",textAlign:"right"}}>{pct}%</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Agitation */}
+          <div>
+            <SectionHead>Class Agitation</SectionHead>
+            {CLASSES.map((cls,i)=>{
+              const ph = agitPhase(agitation[i]);
+              return (
+                <div key={cls} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px"}}>
+                  <div style={{width:6,height:6,borderRadius:"2px",background:CLASS_COLORS[i],flexShrink:0}}/>
+                  <span style={{fontSize:"9px",color:S,width:"110px",flexShrink:0}}>{cls}</span>
+                  <div style={{display:"flex",gap:"2px"}}>
+                    {Array.from({length:6},(_,j)=>(
+                      <div key={j} style={{width:7,height:7,borderRadius:"1px",
+                        background:j<agitation[i]?ph.color:"rgba(255,255,255,0.07)"}}/>
+                    ))}
+                  </div>
+                  <Pill label={ph.label} color={ph.color}/>
+                </div>
+              );
+            })}
+          </div>
+
+          <button onClick={onClose} style={{marginTop:"16px",width:"100%",padding:"8px",cursor:"pointer",
+            fontFamily:"Georgia,serif",fontSize:"10px",letterSpacing:"3px",textTransform:"uppercase",
+            borderRadius:"4px",background:"transparent",border:"1px solid rgba(255,255,255,0.1)",color:S}}>Close</button>
+        </div>
+      </div>
+    );
+  }
+
+  function RegionsTab({candidates, data, agitation, natUnrest, regionDescs}) {
+    const [open, setOpen] = useState(null);
+    return (
+      <div style={{padding:"16px",maxWidth:"860px",margin:"0 auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:"6px"}}>
+          {REGIONS.map((r,rIdx)=>{
+            const pops   = candidates.map(c=>({c,score:calcPopularity(c,data,agitation,natUnrest)[rIdx]})).sort((a,b)=>b.score-a.score);
+            const leader = pops[0];
+            const lit    = litLevel(data,rIdx);
+            const cSum   = colSum(data,rIdx);
+            // top 2 classes by %
+            const topCls = CLASSES.map((cls,i)=>({cls,i,pct:Math.round(data[i][rIdx]/cSum*100)})).sort((a,b)=>b.pct-a.pct).slice(0,2);
+            return (
+              <div key={r} onClick={()=>setOpen(rIdx)} className="card"
+                style={{padding:"11px 13px",cursor:"pointer",background:"rgba(255,255,255,0.02)",
+                  borderRadius:"5px",border:"1px solid rgba(255,255,255,0.07)",
+                  borderLeft:`3px solid ${leader?.c.color||"rgba(255,255,255,0.1)"}`,
+                  borderTop:"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:"12px",color:"#e8dcc8",letterSpacing:"1px"}}>{r}</div>
+                    <div style={{fontSize:"8px",color:D,marginTop:"1px"}}>🏛 {CAPITALS[rIdx]} · {REGION_SEATS[rIdx]} seats</div>
+                  </div>
+                  <Pill label={lit.label} color={lit.color}/>
+                </div>
+                {/* party scores */}
+                <div style={{marginBottom:"6px"}}>
+                  {pops.slice(0,3).map(({c,score},i)=>(
+                    <div key={c.id} style={{display:"flex",alignItems:"center",gap:"5px",marginBottom:"2px"}}>
+                      <div style={{width:5,height:5,borderRadius:"50%",background:c.color,flexShrink:0}}/>
+                      <span style={{fontSize:"9px",color:i===0?c.color:S,flex:1}}>{c.name}</span>
+                      <span style={{fontSize:"9px",fontWeight:i===0?"bold":"normal",
+                        color:score>=0?(i===0?c.color:D):"#c4605a"}}>{score>0?"+":""}{score}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* top classes */}
+                <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+                  {topCls.map(({cls,i,pct})=>(
+                    <span key={i} style={{fontSize:"8px",color:CLASS_COLORS[i],
+                      background:CLASS_COLORS[i]+"15",border:`1px solid ${CLASS_COLORS[i]}30`,
+                      borderRadius:"3px",padding:"1px 5px"}}>{cls.split(" ").pop()} {pct}%</span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {open!==null&&<RegionModal rIdx={open} candidates={candidates} data={data} agitation={agitation} natUnrest={natUnrest} regionDescs={regionDescs} onClose={()=>setOpen(null)}/>}
+      </div>
+    );
+  }
+
+  // ── PARTIES TAB ───────────────────────────────────────────────────────────
+  function PartiesTab({candidates, data, agitation, natUnrest, senateHolder, government}) {
+    const [active, setActive] = useState(null);
+    const proj = projectSeats(candidates, data, agitation, natUnrest);
+
+    return (
+      <div style={{padding:"16px",maxWidth:"860px",margin:"0 auto"}}>
+        {/* Party selector tabs */}
+        <div style={{display:"flex",gap:"4px",marginBottom:"14px",flexWrap:"wrap"}}>
+          {candidates.map(c=>(
+            <button key={c.id} className="tab-btn" onClick={()=>setActive(p=>p===c.id?null:c.id)}
+              style={{padding:"6px 14px",cursor:"pointer",borderRadius:"4px",fontFamily:"Georgia,serif",fontSize:"10px",
+                letterSpacing:"2px",textTransform:"uppercase",border:`1px solid ${active===c.id?c.color:c.color+"44"}`,
+                background:active===c.id?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.02)",color:active===c.id?c.color:S}}>
+              {c.name}
+            </button>
+          ))}
+          {active&&<button onClick={()=>setActive(null)} style={{padding:"6px 10px",cursor:"pointer",borderRadius:"4px",fontSize:"10px",background:"none",border:"1px solid rgba(255,255,255,0.1)",color:D,fontFamily:"Georgia,serif"}}>✕</button>}
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+          {candidates.filter(c=>!active||c.id===active).map(cand=>{
+            const pops     = calcPopularity(cand,data,agitation,natUnrest);
+            const totalPop = pops.reduce((a,b)=>a+b,0);
+            const seats    = proj[cand.id]||0;
+            const isSenate = senateHolder===cand.id;
+            const myMin    = MINISTRIES.filter(m=>government?.[m.id]===cand.id);
+            const base     = cand.classBase||[];
+            const laws     = cand.laws||[];
+
+            return (
+              <Card key={cand.id} accent={cand.color}>
+                {/* Header */}
+                <div style={{display:"flex",alignItems:"flex-start",gap:"10px",marginBottom:"12px",flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:"140px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
+                      <div style={{width:12,height:12,borderRadius:"50%",background:cand.color}}/>
+                      <span style={{fontSize:"15px",color:cand.color,letterSpacing:"1px",fontFamily:"Georgia,serif"}}>{cand.name}</span>
+                    </div>
+                    <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+                      {isSenate&&<Pill label="🏛 Senate Majority" color="#9b7fba"/>}
+                      {myMin.map(m=><Pill key={m.id} label={`👑 ${m.title}`} color={G}/>)}
+                    </div>
+                  </div>
+                  {/* Summary stats */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"5px",minWidth:"240px"}}>
+                    {[["Popularity",totalPop>=0?"+"+totalPop:totalPop,totalPop>=0?cand.color:"#c4605a"],
+                      ["Proj. Seats",seats,seats>=MAJORITY?"#6db87a":cand.color],
+                      ["Seat %",Math.round(seats/TOTAL_SEATS*100)+"%",cand.color],
+                      ["Laws",(cand.laws||[]).length,G],
+                      ["Actions",(cand.actions||[]).length,S]].map(([l,v,c])=>(
+                      <div key={l} style={{textAlign:"center",padding:"5px",background:"rgba(0,0,0,0.2)",borderRadius:"3px"}}>
+                        <div style={{fontSize:"7px",color:D,letterSpacing:"1px",textTransform:"uppercase",marginBottom:"2px"}}>{l}</div>
+                        <div style={{fontSize:"14px",color:c,fontFamily:"Georgia,serif"}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Class base */}
+                {base.length>0&&(
+                  <div style={{marginBottom:"10px"}}>
+                    <div style={{fontSize:"8px",color:D,letterSpacing:"2px",marginBottom:"4px"}}>BASE CLASSES (×2 influence)</div>
+                    <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+                      {base.map(i=>(
+                        <span key={i} style={{fontSize:"9px",color:CLASS_COLORS[i],padding:"2px 8px",borderRadius:"3px",
+                          background:CLASS_COLORS[i]+"15",border:`1px solid ${CLASS_COLORS[i]}40`}}>
+                          {CLASSES[i]}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Home regions */}
+                {(cand.regionBase||[]).length>0&&(
+                  <div style={{marginBottom:"10px"}}>
+                    <div style={{fontSize:"8px",color:D,letterSpacing:"2px",marginBottom:"4px"}}>HOME REGIONS (+3 bonus)</div>
+                    <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+                      {(cand.regionBase||[]).map(i=>(
+                        <span key={i} style={{fontSize:"9px",color:cand.color,padding:"2px 8px",borderRadius:"3px",
+                          background:cand.color+"15",border:`1px solid ${cand.color}40`}}>
+                          {REGIONS[i]}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Regional popularity grid */}
+                <div style={{marginBottom:laws.length?"12px":"0"}}>
+                  <div style={{fontSize:"8px",color:D,letterSpacing:"2px",marginBottom:"6px"}}>REGIONAL POPULARITY</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 16px"}}>
+                    {REGIONS.map((r,i)=>(
+                      <div key={r}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px"}}>
+                          <span style={{fontSize:"8px",color:S}}>{r}</span>
+                          <span style={{fontSize:"8px",color:pops[i]>=0?cand.color:"#c4605a",fontWeight:"bold"}}>{pops[i]>0?"+":""}{pops[i]}</span>
+                        </div>
+                        <Bar pct={popPct(pops[i])} color={pops[i]>0?cand.color:"rgba(255,255,255,0.07)"} height={3}/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Laws */}
+                {laws.length>0&&(
+                  <div style={{paddingTop:"10px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                    <div style={{fontSize:"8px",color:D,letterSpacing:"2px",marginBottom:"6px"}}>ENACTED LAWS</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
+                      {laws.map(law=>(
+                        <div key={law.id} style={{display:"flex",alignItems:"center",gap:"7px",padding:"5px 9px",
+                          background:"rgba(201,168,76,0.05)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:"3px",flexWrap:"wrap"}}>
+                          <span style={{fontSize:"10px",color:"#e8dcc8",flex:1}}>{law.name}</span>
+                          <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>
+                            {(law.effects||[]).map(({classIdx,type})=>(
+                              <span key={classIdx} style={{fontSize:"8px",padding:"1px 5px",borderRadius:"2px",
+                                background:type==="bonus"?"rgba(80,160,100,0.1)":"rgba(200,80,60,0.1)",
+                                border:`1px solid ${type==="bonus"?"rgba(80,160,100,0.25)":"rgba(200,80,60,0.25)"}`,
+                                color:type==="bonus"?"#80c890":"#e08060"}}>
+                                {type==="bonus"?"+":"−"}{CLASSES[classIdx]}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── ELECTIONS TAB ─────────────────────────────────────────────────────────
+  function ElectionsTab({electionHistory, candidates}) {
+    const history = electionHistory||[];
+    if (!history.length) return (
+      <div style={{padding:"60px 20px",textAlign:"center",color:S,fontSize:"11px",letterSpacing:"2px",textTransform:"uppercase"}}>
+        No election results saved yet
+      </div>
+    );
+
+    const [typeFilter, setTypeFilter] = useState("all");
+    const filtered = typeFilter==="all" ? history : history.filter(el=>el.type===typeFilter);
+    return (
+      <div style={{padding:"16px",maxWidth:"860px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"16px"}}>
+        <div style={{display:"flex",gap:"6px",marginBottom:"4px"}}>
+          {["all","chamber","senate"].map(t=>(
+            <button key={t} onClick={()=>setTypeFilter(t)}
+              style={{padding:"5px 14px",cursor:"pointer",fontFamily:"Georgia,serif",fontSize:"9px",
+                letterSpacing:"2px",textTransform:"uppercase",borderRadius:"3px",
+                background:typeFilter===t?"rgba(201,168,76,0.15)":"rgba(255,255,255,0.02)",
+                border:`1px solid ${typeFilter===t?"rgba(201,168,76,0.5)":"rgba(255,255,255,0.08)"}`,
+                color:typeFilter===t?G:S}}>
+              {t==="all"?"All":t==="chamber"?"Chamber":"Senate"}
+            </button>
+          ))}
+          <span style={{fontSize:"9px",color:D,alignSelf:"center",marginLeft:"4px"}}>{filtered.length} result{filtered.length!==1?"s":""}</span>
+        </div>
+        {filtered.map(el=>{
+          const sortedRanked = [...(el.ranked||[])].sort((a,b)=>(el.seatTotals[b.id]||0)-(el.seatTotals[a.id]||0));
+          const colorMap = {};
+          candidates.forEach(c => { colorMap[c.id] = c.color; });
+          el.ranked?.forEach(r => { colorMap[r.id] = r.color; });
+          return (
+            <Card key={el.id} accent={el.winner.color}>
+              <div style={{marginBottom:"14px"}}>
+                <div style={{fontSize:"8px",color:D,letterSpacing:"3px",textTransform:"uppercase",marginBottom:"8px"}}>
+                  {el.type==="chamber"?"Chamber of Deputies":"Senate"} · {el.season} {el.year}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                  <div style={{width:12,height:12,borderRadius:"50%",background:el.winner.color,flexShrink:0}}/>
+                  <span style={{fontSize:"17px",color:el.winner.color,flex:1}}>{el.winner.name}</span>
+                  <span style={{fontSize:"26px",fontWeight:"bold",color:"#e8dcc8",lineHeight:1}}>{el.seatTotals[el.winner.id]}</span>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:"9px",color:D}}>/ {el.totalSeats}</div>
+                    <div style={{fontSize:"11px",color:el.winner.color}}>{Math.round(el.seatTotals[el.winner.id]/el.totalSeats*100)}%</div>
+                  </div>
+                  {el.hasMajority&&<Pill label="Majority" color="#6db87a"/>}
+                </div>
+              </div>
+
+              {/* Parliament semicircle */}
+              <div style={{marginBottom:"12px"}}>
+                <ParliamentGrid seatTotals={el.seatTotals} candidates={el.ranked} total={el.totalSeats}
+                  majority={el.type==="senate"?SENATE_MAJ:MAJORITY}/>
+              </div>
+
+              {/* Per-party breakdown with delta */}
+              {(()=>{
+                const prevEl = history.filter(h=>h.type===el.type&&h.id!==el.id)[0];
+                return (
+                  <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
+                    {sortedRanked.map(r=>{
+                      const s   = el.seatTotals[r.id]||0;
+                      const pct = Math.round(s/el.totalSeats*100);
+                      if (!s) return null;
+                      const prevS = prevEl?(prevEl.seatTotals[r.id]||0):null;
+                      const delta = prevS!==null ? s-prevS : null;
+                      return (
+                        <div key={r.id} style={{marginBottom:"6px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:"7px",marginBottom:"3px"}}>
+                            <div style={{width:8,height:8,borderRadius:"50%",background:r.color,flexShrink:0}}/>
+                            <span style={{fontSize:"11px",color:r.color,flex:1}}>{r.name}</span>
+                            <span style={{fontSize:"13px",color:"#e8dcc8",fontWeight:"bold"}}>{s}</span>
+                            <span style={{fontSize:"9px",color:D,minWidth:"30px",textAlign:"right"}}>{pct}%</span>
+                            {delta!==null&&(
+                              <span style={{fontSize:"9px",minWidth:"30px",textAlign:"right",fontWeight:"bold",
+                                color:delta>0?"#6db87a":delta<0?"#c4605a":D}}>
+                                {delta>0?"+":""}{delta===0?"±0":delta}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{height:"5px",background:"rgba(255,255,255,0.06)",borderRadius:"2px",overflow:"hidden"}}>
+                            <div style={{width:pct+"%",height:"100%",background:r.color,borderRadius:"2px",transition:"width 0.3s"}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {prevEl&&(
+                      <div style={{display:"flex",justifyContent:"space-between",marginTop:"6px",paddingTop:"6px",
+                        borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                        <span style={{fontSize:"8px",color:D,letterSpacing:"1px"}}>Change vs {prevEl.season} {prevEl.year}</span>
+                        <div style={{display:"flex",gap:"8px"}}>
+                          <span style={{fontSize:"8px",color:"#6db87a"}}>▲ gained</span>
+                          <span style={{fontSize:"8px",color:"#c4605a"}}>▼ lost</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </Card>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ── DIPLOMACY TAB ─────────────────────────────────────────────────────────
+  function DiplomacyTab({nations, wars, deals}) {
+    if (!nations||nations.length===0) return (
+      <div style={{padding:"60px 20px",textAlign:"center",color:D,fontSize:"10px",letterSpacing:"3px",textTransform:"uppercase"}}>No foreign nations registered</div>
+    );
+
+    const [selected, setSelected] = useState(null);
+    const selNat = nations.find(n=>n.id===selected);
+
+    return (
+      <div style={{padding:"16px",maxWidth:"860px",margin:"0 auto"}}>
+        {/* Overview grid */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"8px",marginBottom:"20px"}}>
+          {nations.map(n=>{
+            const az   = n.diplo?.azzuria??0;
+            const col  = DIPLO_COLORS[az+3];
+            const lbl  = DIPLO_LABELS[az+3];
+            const {eco,mil,avail} = calcNationEco(n);
+            const atWar = (wars||[]).some(w=>w.attId===n.id||w.defId===n.id);
+            const hasDeal = (deals||[]).some(d=>d.aId===n.id||d.bId===n.id);
+            const uCol = n.unrest>=7?"#c4605a":n.unrest>=4?"#c47a5a":n.unrest>=2?"#c9a84c":"#6db87a";
+            return (
+              <div key={n.id} onClick={()=>setSelected(p=>p===n.id?null:n.id)} className="card"
+                style={{padding:"12px 14px",cursor:"pointer",background:"rgba(255,255,255,0.02)",
+                  borderRadius:"5px",border:`1px solid ${selected===n.id?n.color:"rgba(255,255,255,0.08)"}`,
+                  borderTop:`3px solid ${n.color}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:"7px",marginBottom:"7px"}}>
+                  <div style={{width:9,height:9,borderRadius:"50%",background:n.color,flexShrink:0}}/>
+                  <span style={{fontSize:"12px",color:n.color,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.name}</span>
+                  {atWar&&<span style={{fontSize:"9px",color:"#c4605a"}}>⚔</span>}
+                  {hasDeal&&<span style={{fontSize:"9px",color:"#6db87a"}}>🤝</span>}
+                </div>
+                <div style={{fontSize:"8px",color:D,marginBottom:"5px",letterSpacing:"1px"}}>{n.regime}</div>
+                {/* Standing bar */}
+                <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"6px"}}>
+                  <span style={{fontSize:"8px",color:D,width:"40px"}}>vs Azz</span>
+                  <div style={{flex:1,display:"flex",gap:"2px"}}>
+                    {[-3,-2,-1,0,1,2,3].map(v=>(
+                      <div key={v} style={{flex:1,height:"4px",borderRadius:"1px",
+                        background:az===v?col:"rgba(255,255,255,0.08)"}}/>
+                    ))}
+                  </div>
+                  <span style={{fontSize:"8px",color:col,minWidth:"40px"}}>{lbl}</span>
+                </div>
+                {/* Stats row */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"3px",marginBottom:"5px"}}>
+                  {[["Eco",eco,G],["Mil",mil,S],["Unrest",n.unrest||0,uCol]].map(([l,v,c])=>(
+                    <div key={l} style={{textAlign:"center",padding:"3px",background:"rgba(0,0,0,0.2)",borderRadius:"2px"}}>
+                      <div style={{fontSize:"7px",color:D,letterSpacing:"1px"}}>{l}</div>
+                      <div style={{fontSize:"12px",color:c}}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                <Bar pct={(n.unrest||0)*10} color={uCol} height={3}/>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Detail panel */}
+        {selNat&&(()=>{
+          const az   = selNat.diplo?.azzuria??0;
+          const col  = DIPLO_COLORS[az+3];
+          const lbl  = DIPLO_LABELS[az+3];
+          const {eco,mil,avail} = calcNationEco(selNat);
+          const atWar = (wars||[]).find(w=>w.attId===selNat.id||w.defId===selNat.id);
+          const myDeals = (deals||[]).filter(d=>d.aId===selNat.id||d.bId===selNat.id);
+          const uInfo = selNat.unrest>=7?{label:"Crisis",color:"#c4605a"}:selNat.unrest>=4?{label:"Volatile",color:"#c47a5a"}:selNat.unrest>=2?{label:"Tense",color:"#c9a84c"}:{label:"Stable",color:"#6db87a"};
+          return (
+            <Card accent={selNat.color}>
+              <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"14px",flexWrap:"wrap"}}>
+                <div style={{width:12,height:12,borderRadius:"50%",background:selNat.color}}/>
+                <span style={{fontSize:"18px",color:selNat.color,flex:1}}>{selNat.name}</span>
+                <Pill label={selNat.regime||"Unknown"} color={S}/>
+                {atWar&&<Pill label="⚔ At War" color="#c4605a"/>}
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"8px",marginBottom:"14px"}}>
+                {[["Economy",eco,G],["Military",mil,"#c47a5a"],["Avail Mil",avail,"#4a90c0"],["Unrest",selNat.unrest||0,uInfo.color]].map(([l,v,c])=>(
+                  <div key={l} style={{textAlign:"center",padding:"8px",background:"rgba(0,0,0,0.25)",borderRadius:"3px"}}>
+                    <div style={{fontSize:"8px",color:D,letterSpacing:"2px",textTransform:"uppercase",marginBottom:"4px"}}>{l}</div>
+                    <div style={{fontSize:"18px",color:c,fontFamily:"Georgia,serif"}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px",padding:"8px 12px",
+                background:col+"12",border:`1px solid ${col}30`,borderRadius:"3px"}}>
+                <span style={{fontSize:"9px",color:D,letterSpacing:"2px",flex:1}}>STANDING WITH AZZURIA</span>
+                <div style={{display:"flex",gap:"3px"}}>
+                  {[-3,-2,-1,0,1,2,3].map(v=>(
+                    <div key={v} title={DIPLO_LABELS[v+3]} style={{width:"22px",height:"16px",borderRadius:"2px",
+                      background:az===v?col:az>v?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.03)",
+                      border:`1px solid ${az===v?col:"rgba(255,255,255,0.06)"}`,
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      fontSize:"7px",color:az===v?col:D}}>{v}</div>
+                  ))}
+                </div>
+                <span style={{fontSize:"12px",color:col,fontWeight:"bold"}}>{lbl}</span>
+              </div>
+
+              {atWar&&(
+                <div style={{marginBottom:"10px",padding:"8px 12px",background:"rgba(196,96,90,0.07)",
+                  border:"1px solid rgba(196,96,90,0.2)",borderRadius:"3px",fontSize:"10px",color:S}}>
+                  ⚔ At war — score {atWar.score>0?"+":""}{atWar.score||0} after {atWar.turns||0} turns
+                </div>
+              )}
+
+              {myDeals.length>0&&(
+                <div style={{marginBottom:"10px"}}>
+                  <div style={{fontSize:"8px",color:"#6db87a",letterSpacing:"2px",marginBottom:"5px"}}>ACTIVE TRADE DEALS</div>
+                  {myDeals.map(d=>{
+                    const partner = d.aId===selNat.id?d.bId:d.aId;
+                    const pName   = partner==="azzuria"?"Azzuria":(nations.find(n=>n.id===partner)?.name||partner);
+                    return <div key={d.id} style={{fontSize:"9px",color:S,marginBottom:"2px"}}>↔ {pName} · {d.turnsLeft} turns remaining</div>;
+                  })}
+                </div>
+              )}
+
+              {/* Regions breakdown */}
+              {(selNat.regions||[]).length>0&&(
+                <div style={{marginBottom:"12px"}}>
+                  <div style={{fontSize:"8px",color:D,letterSpacing:"2px",marginBottom:"6px"}}>TERRITORY</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+                    {(selNat.regions||[]).map(r=>(
+                      <div key={r.id||r.name} style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                        <span style={{fontSize:"10px",color:"#e8dcc8",flex:1}}>{r.name}</span>
+                        <span style={{fontSize:"9px",color:D}}>pop</span>
+                        <div style={{width:"60px",height:"4px",background:"rgba(255,255,255,0.06)",borderRadius:"2px",overflow:"hidden"}}>
+                          <div style={{width:Math.min(100,(r.pop||1)*10)+"%",height:"100%",background:selNat.color,borderRadius:"2px"}}/>
+                        </div>
+                        <span style={{fontSize:"10px",color:selNat.color,minWidth:"14px",textAlign:"right"}}>{r.pop||1}</span>
+                      </div>
+                    ))}
+                    <div style={{fontSize:"9px",color:D,marginTop:"2px",paddingTop:"4px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                      Total pop: <span style={{color:selNat.color}}>{(selNat.regions||[]).reduce((s,r)=>s+(r.pop||1),0)}</span>
+                      {selNat.productivity&&<span style={{marginLeft:"8px"}}>× productivity {selNat.productivity} = eco {calcNationEco(selNat).eco}</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(selNat.events||[]).length>0&&(
+                <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:"10px"}}>
+                  <div style={{fontSize:"8px",color:D,letterSpacing:"2px",marginBottom:"6px"}}>RECENT EVENTS</div>
+                  {(selNat.events||[]).slice(0,4).map((ev,i)=>(
+                    <div key={i} style={{fontSize:"10px",color:S,lineHeight:"1.6",marginBottom:"3px"}}>
+                      <span style={{color:D,marginRight:"5px"}}>{ev.season} {ev.year}:</span>{ev.action}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })()}
+      </div>
+    );
+  }
+
+  // ── LAWS TAB ──────────────────────────────────────────────────────────────
+  function LawsTab({candidates, government}) {
+    const allLaws = [
+      ...(candidates||[]).flatMap(c=>(c.laws||[]).map(l=>({...l,src:c.name,color:c.color}))),
+      ...((government?.decrees||[]).filter(d=>d.status==="passed").map(d=>({...d,src:"The Crown",color:"#9b7fba",isDecree:true}))),
+    ].sort((a,b)=>(b.id||0)-(a.id||0));
+
+    if (!allLaws.length) return (
+      <div style={{padding:"60px 20px",textAlign:"center",color:D,fontSize:"10px",letterSpacing:"3px",textTransform:"uppercase"}}>No laws enacted yet</div>
+    );
+
+    return (
+      <div style={{padding:"16px",maxWidth:"860px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"6px"}}>
+        {allLaws.map(item=>(
+          <div key={item.id} style={{padding:"11px 14px",background:"rgba(255,255,255,0.015)",
+            borderLeft:`3px solid ${item.color}`,border:`1px solid ${item.color}18`,
+            borderLeft:`3px solid ${item.color}`,borderRadius:"4px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px",flexWrap:"wrap"}}>
+              <div style={{width:6,height:6,borderRadius:"50%",background:item.color}}/>
+              <span style={{fontSize:"11px",color:"#e8dcc8",flex:1,fontFamily:"Georgia,serif"}}>{item.name}</span>
+              {item.isDecree&&<Pill label="Decree" color="#9b7fba"/>}
+              {item.region!==undefined&&item.region!=="all"&&<Pill label={REGIONS[item.region]} color={S}/>}
+              <span style={{fontSize:"9px",color:item.color}}>{item.src}</span>
+            </div>
+            {item.desc&&<div style={{fontSize:"9px",color:S,fontStyle:"italic",marginBottom:"6px",paddingLeft:"14px"}}>{item.desc}</div>}
+            <div style={{display:"flex",flexWrap:"wrap",gap:"3px",paddingLeft:"14px"}}>
+              {(item.effects||[]).map(({classIdx,type})=>(
+                <span key={classIdx} style={{fontSize:"8px",padding:"2px 7px",borderRadius:"3px",
+                  background:type==="bonus"?"rgba(80,160,100,0.1)":"rgba(200,80,60,0.1)",
+                  border:`1px solid ${type==="bonus"?"rgba(80,160,100,0.25)":"rgba(200,80,60,0.25)"}`,
+                  color:type==="bonus"?"#80c890":"#e08060"}}>
+                  {type==="bonus"?"+":"−"} {CLASSES[classIdx]}
+                </span>
+              ))}
+              {item.agitClass!=null&&(
+                <span style={{fontSize:"8px",padding:"2px 7px",borderRadius:"3px",
+                  background:item.agitDir<0?"rgba(80,160,100,0.1)":"rgba(200,80,60,0.1)",
+                  border:`1px solid ${item.agitDir<0?"rgba(80,160,100,0.25)":"rgba(200,80,60,0.25)"}`,
+                  color:item.agitDir<0?"#80c890":"#e08060"}}>
+                  {item.agitDir<0?"Calms":"Agitates"} {CLASSES[item.agitClass]}
+                </span>
+              )}
+              {item.diploNation&&(
+                <span style={{fontSize:"8px",padding:"2px 7px",borderRadius:"3px",
+                  background:item.diploDir>0?"rgba(80,160,100,0.1)":"rgba(200,80,60,0.1)",
+                  border:`1px solid ${item.diploDir>0?"rgba(80,160,100,0.25)":"rgba(200,80,60,0.25)"}`,
+                  color:item.diploDir>0?"#80c890":"#e08060"}}>
+                  {item.diploDir>0?"↑":"↓"} Diplomacy
+                </span>
+              )}
+              {item.milDelta&&<span style={{fontSize:"8px",padding:"2px 7px",borderRadius:"3px",background:"rgba(196,122,90,0.1)",border:"1px solid rgba(196,122,90,0.25)",color:"#c47a5a"}}>Military {item.milDelta>0?"+":""}{item.milDelta}</span>}
+              {item.tariffDelta&&<span style={{fontSize:"8px",padding:"2px 7px",borderRadius:"3px",background:"rgba(201,168,76,0.1)",border:"1px solid rgba(201,168,76,0.25)",color:G}}>Tariffs {item.tariffDelta>0?"+":""}{item.tariffDelta}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // ── APP ───────────────────────────────────────────────────────────────────
+  function App() {
+    const [state,    setState]    = useState(null);
+    const [error,    setError]    = useState(null);
+    const [syncing,  setSyncing]  = useState(false);
+    const [lastSync, setLastSync] = useState(null);
+    const [tab,      setTab]      = useState(0);
+
+    const load = useCallback(async () => {
+      setSyncing(true);
+      try {
+        const res  = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN}/latest?t=${Date.now()}`,
+          {headers:{"X-Access-Key":JSONBIN_KEY,"Cache-Control":"no-cache"},cache:"no-store"});
+        const data = await res.json();
+        if (data.record) { setState(data.record); setLastSync(new Date()); setError(null); }
+        else setError("No game data found.");
+      } catch(e) { setError("Connection failed."); }
+      setSyncing(false);
+    }, []);
+
+    useEffect(()=>{ load(); const t=setInterval(load,POLL_MS); return()=>clearInterval(t); },[load]);
+
+    if (error&&!state) return (
+      <div style={{minHeight:"100vh",background:BG,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"12px",padding:"20px"}}>
+        <div style={{fontSize:"10px",letterSpacing:"4px",color:"#c4605a",textTransform:"uppercase"}}>Connection Error</div>
+        <div style={{fontSize:"12px",color:S}}>{error}</div>
+        <button onClick={load} style={{padding:"8px 20px",background:"rgba(201,168,76,0.1)",border:"1px solid rgba(201,168,76,0.3)",borderRadius:"4px",color:G,cursor:"pointer",fontFamily:"Georgia,serif",fontSize:"11px",letterSpacing:"2px",textTransform:"uppercase"}}>Retry</button>
+      </div>
+    );
+
+    if (!state) return (
+      <div style={{minHeight:"100vh",background:BG,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{fontSize:"10px",letterSpacing:"6px",color:D,textTransform:"uppercase"}}>Loading…</div>
+      </div>
+    );
+
+    const {turn,agitation,candidates,senateHolder,government} = state;
+    const regionDescs = state.regionDescs || REGION_DESC;
+    const data       = state.data||INITIAL_DATA.map(r=>[...r]);
+    const natUnrest  = calcNatUnrest(agitation||Array(8).fill(0));
+    const nations    = state.nations||[];
+    const wars       = state.wars||[];
+    const deals      = state.deals||[];
+    const elHistory  = state.electionHistory||[];
+    const ur         = unrestInfo(natUnrest);
+
+    const TABS = [
+      ["Home",       "🏠"],
+      ["Regions",    "🗺"],
+      ["Parties",    "⚑"],
+      ["Laws",       "📜"],
+      ["Elections",  "🗳"],
+      ["Diplomacy",  "⚔"],
+    ];
+
+    return (
+      <div style={{minHeight:"100vh",background:BG,color:"#e8dcc8",fontFamily:"Georgia,serif"}}>
+        {/* Sticky header */}
+        <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(26,21,16,0.97)",
+          backdropFilter:"blur(8px)",borderBottom:"1px solid rgba(201,168,76,0.15)"}}>
+
+          {/* Info bar */}
+          <div className="info-bar" style={{display:"flex",alignItems:"center",gap:"0",
+            padding:"0 16px",height:"40px",borderBottom:"1px solid rgba(255,255,255,0.05)",overflow:"hidden"}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:"8px",flexShrink:0,marginRight:"16px"}}>
+              <span style={{fontSize:"9px",color:{Spring:"#8fae7a",Summer:"#c9a84c",Autumn:"#c47a5a",Winter:"#7ab0d0"}[getSeason(turn)],letterSpacing:"2px",textTransform:"uppercase"}}>{getSeason(turn)}</span>
+              <span style={{fontSize:"17px",color:"#e8dcc8",letterSpacing:"2px"}}>{getYear(turn)}</span>
+              <span style={{fontSize:"9px",color:D}}>T{turn}</span>
+            </div>
+            <div style={{width:"1px",height:"16px",background:"rgba(255,255,255,0.08)",flexShrink:0,marginRight:"16px"}}/>
+            <div style={{display:"flex",alignItems:"center",gap:"6px",flexShrink:0,marginRight:"16px"}}>
+              <span style={{fontSize:"9px",color:D,textTransform:"uppercase",letterSpacing:"1px"}}>Unrest</span>
+              <div style={{width:"50px",height:"3px",background:"rgba(255,255,255,0.08)",borderRadius:"2px",overflow:"hidden"}}>
+                <div style={{width:(natUnrest/10*100)+"%",height:"100%",background:ur.color,transition:"width 0.4s"}}/>
+              </div>
+              <span style={{fontSize:"11px",fontWeight:"bold",color:ur.color}}>{natUnrest}</span>
+              <span style={{fontSize:"8px",color:ur.color,border:`1px solid ${ur.color}44`,borderRadius:"3px",padding:"1px 5px",letterSpacing:"1px",textTransform:"uppercase"}}>{ur.label}</span>
+              {wars.length>0&&<span style={{fontSize:"8px",color:"#c4605a"}}>⚔{wars.length}</span>}
+            </div>
+            <div style={{flex:1}}/>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",flexShrink:0}}>
+              <span style={{fontSize:"8px",color:D,letterSpacing:"1px"}}>{syncing?"Syncing…":lastSync?lastSync.toLocaleTimeString():""}</span>
+              <button onClick={load} style={{background:"none",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"3px",
+                color:D,cursor:"pointer",fontSize:"12px",padding:"2px 8px",lineHeight:1}}>↻</button>
+            </div>
+          </div>
+
+          {/* Tab bar */}
+          <div className="desktop-tabbar" style={{display:"flex",alignItems:"stretch",overflowX:"auto",height:"36px",scrollbarWidth:"none"}}>
+            {TABS.map(([label,icon],i)=>(
+              <button key={i} onClick={()=>setTab(i)}
+                style={{display:"flex",alignItems:"center",gap:"5px",padding:"0 16px",cursor:"pointer",
+                  fontFamily:"Georgia,serif",fontSize:"10px",letterSpacing:"2px",textTransform:"uppercase",
+                  background:"none",border:"none",flexShrink:0,whiteSpace:"nowrap",
+                  borderBottom:tab===i?`2px solid ${G}`:"2px solid transparent",
+                  color:tab===i?"#e8dcc8":D}}>
+                <span style={{fontSize:"11px"}}>{icon}</span>{label}
+                {label==="Elections"&&elHistory.length>0&&
+                  <span style={{fontSize:"7px",background:"rgba(201,168,76,0.15)",borderRadius:"8px",padding:"1px 5px",color:G,marginLeft:"3px"}}>{elHistory.length}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tab content */}
+        {tab===0&&<HomeTab state={state} candidates={candidates} data={data} agitation={agitation||Array(8).fill(0)} natUnrest={natUnrest} turn={turn} regionDescs={regionDescs}/>}
+        {tab===1&&<RegionsTab candidates={candidates} data={data} agitation={agitation||Array(8).fill(0)} natUnrest={natUnrest} regionDescs={regionDescs}/>}
+        {tab===2&&<PartiesTab candidates={candidates} data={data} agitation={agitation||Array(8).fill(0)} natUnrest={natUnrest} senateHolder={senateHolder} government={government}/>}
+        {tab===3&&<LawsTab candidates={candidates} government={government}/>}
+        {tab===4&&<ElectionsTab electionHistory={elHistory} candidates={candidates}/>}
+        {tab===5&&<DiplomacyTab nations={nations} wars={wars} deals={deals}/>}
+
+        <div style={{textAlign:"center",padding:"20px",fontSize:"7px",color:D,letterSpacing:"4px",
+          textTransform:"uppercase",borderTop:`1px solid rgba(201,168,76,0.12)`,marginTop:"10px",color:D}}>
+          ✦ Kingdom of Azzuria · Azzuria Viewer · Auto-refresh every 30s
+        </div>
+
+        {/* Mobile bottom tab bar */}
+        <div className="mobile-tabbar">
+          {TABS.map(([label,icon],i)=>(
+            <button key={i} onClick={()=>setTab(i)}
+              style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",
+                justifyContent:"center",gap:"2px",border:"none",background:"none",cursor:"pointer",
+                borderTop:tab===i?`2px solid ${G}`:"2px solid transparent"}}>
+              <span style={{fontSize:"15px"}}>{icon}</span>
+              <span style={{fontSize:"8px",letterSpacing:"1px",textTransform:"uppercase",
+                color:tab===i?G:S}}>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
